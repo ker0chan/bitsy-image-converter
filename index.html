@@ -1,0 +1,365 @@
+<html>
+<style>
+  #container > div
+  {
+    margin:3px;
+  }
+  canvas
+  {
+    width:256px;
+    height:256px;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: -webkit-crisp-edges;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  input
+  {
+    margin:10px;
+  }
+  textarea
+  {
+    display:block;
+    width:800px;
+    height:400px;
+    overflow:auto;
+    border:1px solid black;
+  }
+</style>
+<body>
+  <div id="container">
+    <h1>Bitsy image-to-room converter</h1>
+
+    <div>
+      Drag and drop an image on this rectangle:
+    </div>
+
+    <canvas id="canvas" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);" width=128 height=128></canvas>
+    <canvas id="canvas_adjusted" width=128 height=128></canvas>
+
+    <div>
+      <input id="colorPicker1" type="color" value="#0052cc"/><label for="colorPicker1">Background color</label>
+      <br/>
+      <input id="colorPicker2" type="color" value="#809fff"/><label for="colorPicker1">Tile color</label>
+      <br/>
+      <input id="brightness" type="range" min="-128" max="128" step="1" value="0"/><label for="brightness">Brightness</label>
+      <br/>
+      <input id="contrast" type="range" min="0.25" max="1.75" step="0.01" value="1"/><label for="contrast">Contrast</label>
+      <br/>
+      <input id="invert" type="checkbox"/><label for="invert">Invert colors</label>
+    </div>
+
+    <div>
+      Copy and paste the following in your Bitsy game data:
+      <br/>
+      <textarea id="result">
+      </textarea>
+    </div>
+</div>
+<script>
+
+//HELPERS
+function hexToRgb(hex) {
+    var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+    } : null;
+}
+
+function getPixel(imgData, x, y)
+{
+  return {
+    "x":x,
+    "y":y,
+    "r":imgData.data[(x + 128*y) * 4],
+    "g":imgData.data[(x + 128*y) * 4 + 1],
+    "b":imgData.data[(x + 128*y) * 4 + 2]
+  }
+}
+
+function setPixel(imgData, pixel)
+{
+  imgData.data[(pixel.x + 128*pixel.y) * 4] = pixel.r;
+  imgData.data[(pixel.x + 128*pixel.y) * 4 + 1] = pixel.g;
+  imgData.data[(pixel.x + 128*pixel.y) * 4 + 2] = pixel.b;
+}
+
+function setPixelMonochrome(imgData, pixel)
+{
+  imgData.data[(pixel.x + 128*pixel.y) * 4] = pixel.r;
+  imgData.data[(pixel.x + 128*pixel.y) * 4 + 1] = pixel.r;
+  imgData.data[(pixel.x + 128*pixel.y) * 4 + 2] = pixel.r;
+}
+
+//INPUTS
+var color1 = hexToRgb(document.querySelector("#colorPicker1").value);
+document.querySelector("#colorPicker1").addEventListener("change", setColor1, false);
+function setColor1(event) {
+  color1 = hexToRgb(event.target.value);
+  applyColors();
+}
+
+var color2 = hexToRgb(document.querySelector("#colorPicker2").value);
+document.querySelector("#colorPicker2").addEventListener("change", setColor2, false);
+function setColor2(event) {
+  color2 = hexToRgb(event.target.value);
+  applyColors();
+}
+
+var brightness = parseInt(document.querySelector("#brightness").value);
+document.querySelector("#brightness").addEventListener("change", setBrightness, false);
+function setBrightness(event) {
+  brightness = parseInt(event.target.value);
+  console.log(brightness);
+  applyBriCon();
+  applyDithering();
+  applyColors();
+  cutTiles();
+}
+
+var contrast = parseFloat(document.querySelector("#contrast").value);
+document.querySelector("#contrast").addEventListener("change", setContrast, false);
+function setContrast(event) {
+  contrast = parseFloat(event.target.value);
+  console.log(contrast);
+  applyBriCon();
+  applyDithering();
+  applyColors();
+  cutTiles();
+}
+
+var invert = document.querySelector("#invert").checked;
+document.querySelector("#invert").addEventListener("change", setInvert, false);
+function setInvert(event) {
+  invert = event.target.checked;
+  applyDithering();
+  applyColors();
+  cutTiles();
+}
+
+//CONTEXTS
+var ctx = document.getElementById('canvas').getContext('2d');
+ctx.mozImageSmoothingEnabled = false;
+ctx.webkitImageSmoothingEnabled = false;
+ctx.msImageSmoothingEnabled = false;
+ctx.imageSmoothingEnabled = false;
+ctx.fillStyle = "#000000";
+ctx.fillRect(0, 0, 128, 128);
+var ctx_adjusted = document.getElementById('canvas_adjusted').getContext('2d');
+ctx.mozImageSmoothingEnabled = false;
+ctx.webkitImageSmoothingEnabled = false;
+ctx.msImageSmoothingEnabled = false;
+ctx.imageSmoothingEnabled = false;
+
+// Floyd-Steinberg dithering algorithm from:
+// http://blog.ivank.net/floyd-steinberg-dithering-in-javascript.html
+function floydSteinberg(sb, w, h)   // source buffer, width, height
+{
+   for(var i=0; i<h; i++)
+      for(var j=0; j<w; j++)
+      {
+         var ci = i*w+j;               // current buffer index
+         var cc = sb[ci];              // current color
+         var rc = (cc<128?0:255);      // real (rounded) color
+         var err = cc-rc;              // error amount
+         sb[ci] = rc;                  // saving real color
+         if(j+1<w) sb[ci  +1] += (err*7)>>4;  // if right neighbour exists
+         if(i+1==h) continue;   // if we are in the last line
+         if(j  >0) sb[ci+w-1] += (err*3)>>4;  // bottom left neighbour
+                   sb[ci+w  ] += (err*5)>>4;  // bottom neighbour
+         if(j+1<w) sb[ci+w+1] += (err*1)>>4;  // bottom right neighbour
+      }
+}
+
+//Drawing an image (eazi)
+var baseData = ctx.getImageData(0,0,128,128);
+function drawImage(img)
+{
+  ctx.drawImage(img, 0,0, img.width,img.height, 0,0, 128,128);
+  baseData = ctx.getImageData(0,0,128,128);
+}
+
+//Applying brightness and contrast values
+//(I don't think brightness and contrast really work that way, but that's close enough I guess?)
+var adjustedData;
+function applyBriCon()
+{
+  if(baseData)
+    ctx.putImageData(baseData, 0, 0);
+
+  var myImageData = ctx.getImageData(0, 0, 128, 128);
+  for(var y = 0; y < 128; y++)
+  {
+    for(var x = 0; x < 128; x++)
+    {
+      var pixel = getPixel(myImageData, x, y);
+
+      pixel.r = (pixel.r + brightness)*contrast;
+      pixel.g = (pixel.g + brightness)*contrast;
+      pixel.b = (pixel.b + brightness)*contrast;
+
+      setPixel(myImageData, pixel);
+    }
+  }
+  adjustedData = myImageData;
+  ctx.putImageData(adjustedData, 0, 0);
+  ctx_adjusted.putImageData(adjustedData, 0, 0);
+}
+
+//Dithering the image using the Floyd-Steinberg algorithm
+var ditheredData;
+function applyDithering()
+{
+  ctx.putImageData(adjustedData,0,0);
+  var myImageData = ctx.getImageData(0, 0, 128, 128);
+  var buffer = [];
+  for(var y = 0; y < 128; y++)
+  {
+    for(var x = 0; x < 128; x++)
+    {
+      //Averaging the R/G/B values because the FS algorithm I found only runs on grayscale images
+      buffer.push(
+        ((myImageData.data[(x + 128*y)*4]) +
+        (myImageData.data[(x + 128*y)*4 + 1]) +
+        (myImageData.data[(x + 128*y)*4 + 2])) / 3
+      );
+    }
+  }
+
+  floydSteinberg(buffer, 128, 128);
+
+  //From the buffer, back to ImageData
+  for(var y = 0; y < 128; y++)
+  {
+    for(var x = 0; x < 128; x++)
+    {
+      setPixelMonochrome(myImageData, {"x":x, "y":y, "r": invert?(buffer[x+128*y]) : (255 - buffer[x+128*y]) });
+    }
+  }
+  ditheredData = myImageData;
+  ctx.putImageData(ditheredData, 0, 0);
+}
+
+//Apply the chosen colors (just for fun, the palette isn't exported)
+var coloredData;
+function applyColors()
+{
+  if(ditheredData)
+    ctx.putImageData(ditheredData, 0, 0);
+
+  var myImageData = ctx.getImageData(0, 0, 128, 128);
+  for(var y = 0; y < 128; y++)
+  {
+    for(var x = 0; x < 128; x++)
+    {
+      var pixel = getPixel(myImageData, x, y);
+
+      pixel.r = pixel.r < 128? color1.r : color2.r;
+      pixel.g = pixel.g < 128? color1.g : color2.g;
+      pixel.b = pixel.b < 128? color1.b : color2.b;
+
+      setPixel(myImageData, pixel);
+    }
+  }
+  coloredData = myImageData;
+  ctx.putImageData(coloredData, 0, 0);
+}
+
+//Generating the result!!
+//Cuts the image into 8x8 tiles, and discards duplicates (reusing previously saved Tiles)
+var result = document.querySelector("#result");
+var tiles = [];
+var tiles_dictionary = [];
+function cutTiles()
+{
+  ctx.putImageData(ditheredData, 0, 0);
+
+  tiles = [];
+  tiles_dictionary = [];
+  //Room header
+  var room_string = "ROOM 0"+ "\n";
+  var tiles_string = "";
+
+  for(var y = 0; y < 16; y++)
+  {
+    for(var x = 0; x < 16; x++)
+    {
+      currentTile = {
+        "id":x+"_"+y,
+        "data":""
+        };
+
+      var currentTileData = ctx.getImageData(x*8, y*8, 8, 8);
+      //tiles_string += "\n" + "TIL "+x+"_"+y + "\n";
+      for(var yy=0; yy < 8; yy++)
+      {
+        for(var xx=0; xx < 8; xx++)
+        {
+          var i = currentTileData.data[(xx + yy*8) * 4]/255;
+          //tiles_string += i;
+
+          currentTile.data += i;
+        }
+
+        //tiles_string += "\n";
+        currentTile.data += "\n";
+      }
+
+      var existingTile = tiles_dictionary.find(t => t.data == currentTile.data);
+      if(existingTile != undefined)
+      {
+        currentTile.id = existingTile.id;
+      } else
+      {
+        tiles_dictionary.push(currentTile)
+      }
+
+      //A tile ID followed by a , (or not, if it's the last column)
+      room_string += currentTile.id+( x < 15 ? "," : "")
+
+    }
+    room_string += "\n"
+  }
+  //The palette used by this room (the default one is fine I guess)
+  room_string += "PAL 0" + "\n"
+
+  //Print every tile that was kept in the dictionary: its ID, followed by the 8x8 data on 8 rows
+  tiles_dictionary.forEach(function(t){
+    tiles_string += "\n" + "TIL "+ t.id + "\n" + t.data;
+  })
+
+  result.innerHTML = room_string + tiles_string;
+  ctx.putImageData(coloredData, 0, 0);
+}
+
+//Drop handler for file upload
+function dropHandler(ev) {
+
+  //Prevent file from being opened
+  ev.preventDefault();
+
+  //Create a new image
+  var img = new Image();
+  img.onload = function() {
+    //After laoding it, draw it, tweak it, dither it, color it, cut it (...Technologic)
+    drawImage(img);
+    applyBriCon();
+    applyDithering();
+    applyColors();
+    cutTiles();
+  }
+
+  //Set its URL to the blob of the uploaded file
+  img.src = URL.createObjectURL(ev.dataTransfer.files[0]);
+}
+function dragOverHandler(ev) {
+  //Prevent file from being opened
+  ev.preventDefault();
+}
+
+
+</script>
+</body>
+</html>
