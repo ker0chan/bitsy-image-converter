@@ -1,5 +1,7 @@
 ## Bitsy Image Converter
 
+[Direct link](https://ker0chan.github.io/bitsy-image-converter/)
+
 This is a hacky, unoptimized and largely untested tool to easily import images into Bitsy.
 It renders an image into a 128x128 canvas, dithers it and cuts it into 8x8 pieces, then exported as tiles.
 Duplicate tiles in a single image are re-used.
