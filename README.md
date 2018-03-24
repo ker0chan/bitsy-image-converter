@@ -1,37 +1,29 @@
-## Welcome to GitHub Pages
+## Bitsy Image Converter
 
-You can use the [editor on GitHub](https://github.com/ker0chan/bitsy-image-converter/edit/master/README.md) to maintain and preview the content for your website in Markdown files.
+This is a hacky, unoptimized and largely untested tool to easily import images into Bitsy.
+It renders an image into a 128x128 canvas, dithers it and cuts it into 8x8 pieces, then exported as tiles.
+Duplicate tiles in a single image are re-used.
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+### Instructions
+* Drop an image on the canvas;
+* Adjust the Brightness and Contrast;
+* Set the colors to the Background and Tile colors you chose in Bitsy;
+* Invert the colors if needed;
+* Copy the result and paste it in Bitsy;
 
-### Markdown
+### Paste it WHERE in Bitsy?
+There's a panel called "Game Data" in the Bitsy editor. In it, you'll find the data for your palettes, rooms, tiles, sprites and more.
+Paste it between the last room and the first tile.
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+### Can I import multiple images?
+Yes, but,
+* You'll have to change the Room identifier (`ROOM 0`) manually;
+* Duplicate tiles across different images will be ignored (you might end up with multiple identical tiles, sorry)
 
-```markdown
-Syntax highlighted code block
+### Can I change the palette?
+Yep. Right under the Room definition (the first paragraph in the output), you'll find the line `PAL 0`. You can change that to another palette id.
 
-# Header 1
-## Header 2
-### Header 3
-
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
-```
-
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/ker0chan/bitsy-image-converter/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+### Can I import an animated image?
+### Can I use animated tiles?
+### Can I export my image as a set of sprites, instead of tiles?
+Not yet.
